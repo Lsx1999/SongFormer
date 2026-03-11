@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "songformer"
+version = "0.1.0"
+description = "SongFormer: Music Generation with AI"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "SongFormer Team"}
+]
+dependencies = [
+    "torch>=2.0.0",
+    "numpy>=1.20.0",
+    "einops>=0.6.0",
+]
