@@ -3,13 +3,11 @@
 
 import numpy as np
 import torch
-from .helpers import (
-    local_maxima,
-    peak_picking,
-    # event_frames_to_time,
-)
-from dataset.label2id import LABEL_TO_ID, ID_TO_LABEL
-from dataset.custom_types import MsaInfo
+
+from SongFormer.dataset.custom_types import MsaInfo
+from SongFormer.dataset.label2id import ID_TO_LABEL, LABEL_TO_ID
+
+from .helpers import local_maxima, peak_picking  # event_frames_to_time,
 
 
 def event_frames_to_time(frame_rates, boundary: np.array):
@@ -26,16 +24,14 @@ def postprocess_functional_structure(
     boundary_logits = logits["boundary_logits"]
     function_logits = logits["function_logits"]
 
-    assert boundary_logits.shape[0] == 1 and function_logits.shape[0] == 1, (
-        "Only batch size 1 is supported"
-    )
+    assert (
+        boundary_logits.shape[0] == 1 and function_logits.shape[0] == 1
+    ), "Only batch size 1 is supported"
     raw_prob_sections = torch.sigmoid(boundary_logits[0])
     raw_prob_functions = torch.softmax(function_logits[0].transpose(0, 1), dim=0)
 
     # filter_size=4 * cfg.min_hops_per_beat + 1
-    prob_sections, _ = local_maxima(
-        raw_prob_sections, filter_size=config.local_maxima_filter_size
-    )
+    prob_sections, _ = local_maxima(raw_prob_sections, filter_size=config.local_maxima_filter_size)
     prob_sections = prob_sections.cpu().numpy()
 
     prob_functions = raw_prob_functions.cpu().numpy()

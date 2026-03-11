@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 import torch.nn.functional as F
-from dataset.custom_types import MsaInfo
-from msaf.eval import compute_results
-from postprocessing.functional import postprocess_functional_structure
+from SongFormer.dataset.custom_types import MsaInfo
+from SongFormer.dataset.label2id import DATASET_ID_ALLOWED_LABEL_IDS, DATASET_LABEL_TO_DATASET_ID
+from SongFormer.postprocessing.functional import postprocess_functional_structure
 from x_transformers import Encoder
 import bisect
 
