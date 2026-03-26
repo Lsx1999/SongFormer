@@ -53,3 +53,11 @@ cython_debug/
 
 .ruff_cache/
 SongFormBench/*
+
+# Build & packaging artifacts
+build/
+dist/
+*.egg-info/
+*.egg
+*.whl
+pip-build-*/
