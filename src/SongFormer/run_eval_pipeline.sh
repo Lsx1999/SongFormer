@@ -66,7 +66,7 @@ done
 # ============== Environment ==============
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "${SCRIPT_DIR}"
-export PYTHONPATH="${SCRIPT_DIR}:${SCRIPT_DIR}/../third_party:${PYTHONPATH}"
+export PYTHONPATH="${SCRIPT_DIR}:${SCRIPT_DIR}/..:${SCRIPT_DIR}/../third_party:${PYTHONPATH}"
 export OMP_NUM_THREADS=1
 export MPI_NUM_THREADS=1
 export NCCL_P2P_DISABLE=1
