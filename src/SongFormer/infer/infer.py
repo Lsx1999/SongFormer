@@ -336,12 +336,14 @@ def inference(rank, queue_input: mp.Queue, queue_output: mp.Queue, args):
                 infer_elapsed = infer_end_time - infer_start_time
                 rtf = infer_elapsed / audio_duration if audio_duration > 0 else 0.0
 
-                logger.info(
-                    f"Inference complete for {Path(item).name}: "
+                rtf_msg = (
+                    f"[RTF] {Path(item).name}: "
                     f"audio_duration={audio_duration:.2f}s, "
                     f"infer_time={infer_elapsed:.2f}s, "
                     f"RTF={rtf:.4f}"
                 )
+                print(rtf_msg, flush=True)
+                logger.info(rtf_msg)
 
                 queue_output.put({"rtf": rtf, "duration": audio_duration})
 
@@ -372,17 +374,20 @@ def deal_with_output(output_path, queue_output, length):
         max_rtf = np.max(rtf_stats)
         std_rtf = np.std(rtf_stats)
 
-        logger.info("=" * 50)
-        logger.info("RTF (Real-Time Factor) Statistics Summary:")
-        logger.info(f"  Total files processed: {len(rtf_stats)}")
-        logger.info(
-            f"  Total audio duration: {total_duration:.2f}s ({total_duration/60:.2f}min)"
-        )
-        logger.info(f"  Average RTF: {avg_rtf:.4f}")
-        logger.info(f"  Min RTF: {min_rtf:.4f}")
-        logger.info(f"  Max RTF: {max_rtf:.4f}")
-        logger.info(f"  Std RTF: {std_rtf:.4f}")
-        logger.info("=" * 50)
+        summary_lines = [
+            "=" * 50,
+            "[RTF Summary] Real-Time Factor Statistics:",
+            f"  Total files processed: {len(rtf_stats)}",
+            f"  Total audio duration: {total_duration:.2f}s ({total_duration/60:.2f}min)",
+            f"  Average RTF: {avg_rtf:.4f}",
+            f"  Min RTF: {min_rtf:.4f}",
+            f"  Max RTF: {max_rtf:.4f}",
+            f"  Std RTF: {std_rtf:.4f}",
+            "=" * 50,
+        ]
+        for line in summary_lines:
+            print(line, flush=True)
+            logger.info(line)
 
 
 def main(args):
