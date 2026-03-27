@@ -342,10 +342,11 @@ def inference(rank, queue_input: mp.Queue, queue_output: mp.Queue, args):
                     f"infer_time={infer_elapsed:.2f}s, "
                     f"RTF={rtf:.4f}"
                 )
-                print(rtf_msg, flush=True)
                 logger.info(rtf_msg)
 
-                queue_output.put({"rtf": rtf, "duration": audio_duration})
+                queue_output.put(
+                    {"rtf": rtf, "duration": audio_duration, "msg": rtf_msg}
+                )
 
             except Exception as e:
                 queue_output.put(None)
@@ -364,11 +365,12 @@ def deal_with_output(output_path, queue_output, length):
         if isinstance(data, dict) and "rtf" in data:
             rtf_stats.append(data["rtf"])
             total_duration += data.get("duration", 0.0)
+            # Print RTF message from worker process
+            if "msg" in data:
+                print(data["msg"], flush=True)
 
     # Log RTF statistics summary
     if rtf_stats:
-        import numpy as np
-
         avg_rtf = np.mean(rtf_stats)
         min_rtf = np.min(rtf_stats)
         max_rtf = np.max(rtf_stats)
@@ -387,7 +389,6 @@ def deal_with_output(output_path, queue_output, length):
         ]
         for line in summary_lines:
             print(line, flush=True)
-            logger.info(line)
 
 
 def main(args):
