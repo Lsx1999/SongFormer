@@ -8,9 +8,10 @@ import time
 from argparse import Namespace
 from pathlib import Path
 
+import numpy as np
+
 # monkey patch to fix issues in msaf
 import scipy
-import numpy as np
 
 scipy.inf = np.inf
 
@@ -167,6 +168,10 @@ def inference(rank, queue_input: mp.Queue, queue_output: mp.Queue, args):
                 # Loading the audio file
                 wav, sr = librosa.load(item, sr=INPUT_SAMPLING_RATE)
                 audio = torch.tensor(wav).to(device)
+
+                # Record inference start time and calculate audio duration for RTF
+                infer_start_time = time.perf_counter()
+                audio_duration = audio.shape[0] / INPUT_SAMPLING_RATE
 
                 win_size = args.win_size
                 hop_size = args.hop_size
@@ -326,7 +331,19 @@ def inference(rank, queue_input: mp.Queue, queue_output: mp.Queue, args):
                     ensure_ascii=False,
                 )
 
-                queue_output.put(None)
+                # Calculate and log RTF (Real-Time Factor)
+                infer_end_time = time.perf_counter()
+                infer_elapsed = infer_end_time - infer_start_time
+                rtf = infer_elapsed / audio_duration if audio_duration > 0 else 0.0
+
+                logger.info(
+                    f"Inference complete for {Path(item).name}: "
+                    f"audio_duration={audio_duration:.2f}s, "
+                    f"infer_time={infer_elapsed:.2f}s, "
+                    f"RTF={rtf:.4f}"
+                )
+
+                queue_output.put({"rtf": rtf, "duration": audio_duration})
 
             except Exception as e:
                 queue_output.put(None)
@@ -334,12 +351,38 @@ def inference(rank, queue_input: mp.Queue, queue_output: mp.Queue, args):
 
 
 def deal_with_output(output_path, queue_output, length):
-    """Handle output data from the queue"""
+    """Handle output data from the queue and collect RTF statistics"""
+    rtf_stats = []
+    total_duration = 0.0
     pbar = tqdm(range(length), desc="getting inference output")
     for _ in pbar:
         data = queue_output.get()
         if not data:
             continue
+        if isinstance(data, dict) and "rtf" in data:
+            rtf_stats.append(data["rtf"])
+            total_duration += data.get("duration", 0.0)
+
+    # Log RTF statistics summary
+    if rtf_stats:
+        import numpy as np
+
+        avg_rtf = np.mean(rtf_stats)
+        min_rtf = np.min(rtf_stats)
+        max_rtf = np.max(rtf_stats)
+        std_rtf = np.std(rtf_stats)
+
+        logger.info("=" * 50)
+        logger.info("RTF (Real-Time Factor) Statistics Summary:")
+        logger.info(f"  Total files processed: {len(rtf_stats)}")
+        logger.info(
+            f"  Total audio duration: {total_duration:.2f}s ({total_duration/60:.2f}min)"
+        )
+        logger.info(f"  Average RTF: {avg_rtf:.4f}")
+        logger.info(f"  Min RTF: {min_rtf:.4f}")
+        logger.info(f"  Max RTF: {max_rtf:.4f}")
+        logger.info(f"  Std RTF: {std_rtf:.4f}")
+        logger.info("=" * 50)
 
 
 def main(args):
