@@ -72,25 +72,12 @@ export MPI_NUM_THREADS=1
 export NCCL_P2P_DISABLE=1
 export NCCL_IB_DISABLE=1
 
-echo "========================================"
-echo "SongFormBench Evaluation Pipeline"
-echo "========================================"
-echo "GPU_NUM: ${GPU_NUM}"
-echo "DATA_DIR: ${DATA_DIR}"
-echo "LOCAL_BENCH_DIR: ${LOCAL_BENCH_DIR:-not set (will download from HuggingFace)}"
-echo "USE_MIRROR: ${USE_MIRROR:-no}"
-echo "========================================"
-
-# ============== Step 1: Download / Prepare Dataset ==============
-if [ -n "$LOCAL_BENCH_DIR" ]; then
-    # Use locally downloaded SongFormBench
-    LOCAL_BENCH_DIR="$(cd "$LOCAL_BENCH_DIR" && pwd)"
-    echo ""
-    echo "[Step 1/6] Preparing data from local SongFormBench: ${LOCAL_BENCH_DIR}"
-
+# ============== Helper: Prepare audio.scp and GT from a SongFormBench directory ==============
+prepare_from_local() {
+    local BENCH_DIR="$1"
     for SUBSET in "${SUBSETS[@]}"; do
-        AUDIO_SRC="${LOCAL_BENCH_DIR}/data/audios/${SUBSET}"
-        LABEL_SRC="${LOCAL_BENCH_DIR}/data/labels/${SUBSET}"
+        AUDIO_SRC="${BENCH_DIR}/data/audios/${SUBSET}"
+        LABEL_SRC="${BENCH_DIR}/data/labels/${SUBSET}"
 
         if [ ! -d "$AUDIO_SRC" ]; then
             echo "  Warning: ${AUDIO_SRC} not found, skipping subset ${SUBSET}"
@@ -125,13 +112,49 @@ if [ -n "$LOCAL_BENCH_DIR" ]; then
         SAMPLE_COUNT=$(wc -l < "${SUBSET_DIR}/audio.scp" | tr -d ' ')
         echo "  Prepared ${SUBSET}: ${SAMPLE_COUNT} audio files, $(ls "${GT_DIR}" | wc -l | tr -d ' ') GT labels"
     done
+}
+
+echo "========================================"
+echo "SongFormBench Evaluation Pipeline"
+echo "========================================"
+echo "GPU_NUM: ${GPU_NUM}"
+echo "DATA_DIR: ${DATA_DIR}"
+echo "LOCAL_BENCH_DIR: ${LOCAL_BENCH_DIR:-auto-detect}"
+echo "USE_MIRROR: ${USE_MIRROR:-no}"
+echo "========================================"
+
+# ============== Step 1: Download / Prepare Dataset ==============
+# Auto-detect local SongFormBench if not specified
+if [ -z "$LOCAL_BENCH_DIR" ]; then
+    DEFAULT_BENCH="${SCRIPT_DIR}/../../SongFormBench"
+    if [ -d "$DEFAULT_BENCH/data/audios" ]; then
+        LOCAL_BENCH_DIR="$DEFAULT_BENCH"
+        echo ""
+        echo "Auto-detected local SongFormBench at: ${DEFAULT_BENCH}"
+    fi
+fi
+
+if [ -n "$LOCAL_BENCH_DIR" ]; then
+    # Use locally downloaded SongFormBench
+    LOCAL_BENCH_DIR="$(cd "$LOCAL_BENCH_DIR" && pwd)"
+    echo ""
+    echo "[Step 1/6] Preparing data from local SongFormBench: ${LOCAL_BENCH_DIR}"
+    prepare_from_local "${LOCAL_BENCH_DIR}"
 
 elif [ "$SKIP_DOWNLOAD" = false ]; then
     echo ""
-    echo "[Step 1/6] Downloading SongFormBench dataset..."
-    python utils/download_songformbench.py \
-        --output_dir "${DATA_DIR}" \
-        ${USE_MIRROR}
+    echo "[Step 1/6] Downloading SongFormBench dataset via huggingface-cli..."
+    HF_DOWNLOAD_DIR="${DATA_DIR}/_hf_download"
+    if [ -n "$USE_MIRROR" ]; then
+        export HF_ENDPOINT="https://hf-mirror.com"
+    fi
+    huggingface-cli download \
+        ASLP-lab/SongFormBench \
+        --repo-type dataset \
+        --local-dir "${HF_DOWNLOAD_DIR}"
+
+    # Prepare audio.scp and GT from downloaded repo
+    prepare_from_local "${HF_DOWNLOAD_DIR}"
 else
     echo ""
     echo "[Step 1/6] Skipping dataset download (--skip_download)"
@@ -172,9 +195,10 @@ for SUBSET in "${SUBSETS[@]}"; do
     echo "Processing subset: ${SUBSET} (${SAMPLE_COUNT} samples)"
     echo "========================================"
 
-    # Step 3: Run inference
+    # Step 3: Run inference (capture RTF stats)
     echo "[Step 3/6] Running inference on ${SUBSET}..."
     mkdir -p "${INFER_JSON_DIR}"
+    RTF_JSON="${DATA_DIR}/${SUBSET}/rtf_stats.json"
     python infer/infer.py \
         -i "${AUDIO_SCP}" \
         -o "${INFER_JSON_DIR}" \
@@ -182,7 +206,8 @@ for SUBSET in "${SUBSETS[@]}"; do
         --checkpoint SongFormer.safetensors \
         --config_path SongFormer.yaml \
         -gn "${GPU_NUM}" \
-        -tn "${THREADS_PER_GPU}"
+        -tn "${THREADS_PER_GPU}" \
+        --rtf_output "${RTF_JSON}"
 
     # Step 4: Convert JSON to MSA TXT
     echo "[Step 4/6] Converting inference results to MSA TXT format..."
@@ -202,9 +227,19 @@ done
 # ============== Step 6: Summarize Results ==============
 echo ""
 echo "[Step 6/6] Summarizing evaluation results..."
+# Collect RTF JSON paths
+RTF_ARGS=""
+for SUBSET in "${SUBSETS[@]}"; do
+    RTF_JSON="${DATA_DIR}/${SUBSET}/rtf_stats.json"
+    if [ -f "${RTF_JSON}" ]; then
+        RTF_ARGS="${RTF_ARGS} --rtf_files ${SUBSET}:${RTF_JSON}"
+    fi
+done
+
 python utils/summarize_results.py \
     --eval_base_dir "${EVAL_OUTPUT_BASE}" \
-    --output_path "${SUMMARY_OUTPUT}"
+    --output_path "${SUMMARY_OUTPUT}" \
+    ${RTF_ARGS}
 
 echo ""
 echo "========================================"

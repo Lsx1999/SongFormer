@@ -353,7 +353,7 @@ def inference(rank, queue_input: mp.Queue, queue_output: mp.Queue, args):
                 logger.error(f"process {rank} error\n{item}\n{e}")
 
 
-def deal_with_output(output_path, queue_output, length):
+def deal_with_output(output_path, queue_output, length, rtf_output=None):
     """Handle output data from the queue and collect RTF statistics"""
     rtf_stats = []
     total_duration = 0.0
@@ -371,10 +371,10 @@ def deal_with_output(output_path, queue_output, length):
 
     # Log RTF statistics summary
     if rtf_stats:
-        avg_rtf = np.mean(rtf_stats)
-        min_rtf = np.min(rtf_stats)
-        max_rtf = np.max(rtf_stats)
-        std_rtf = np.std(rtf_stats)
+        avg_rtf = float(np.mean(rtf_stats))
+        min_rtf = float(np.min(rtf_stats))
+        max_rtf = float(np.max(rtf_stats))
+        std_rtf = float(np.std(rtf_stats))
 
         summary_lines = [
             "=" * 50,
@@ -389,6 +389,21 @@ def deal_with_output(output_path, queue_output, length):
         ]
         for line in summary_lines:
             print(line, flush=True)
+
+        # Save RTF stats to JSON file if requested
+        if rtf_output:
+            rtf_data = {
+                "num_files": len(rtf_stats),
+                "total_audio_duration_s": round(total_duration, 2),
+                "avg_rtf": round(avg_rtf, 4),
+                "min_rtf": round(min_rtf, 4),
+                "max_rtf": round(max_rtf, 4),
+                "std_rtf": round(std_rtf, 4),
+            }
+            os.makedirs(os.path.dirname(rtf_output) or ".", exist_ok=True)
+            with open(rtf_output, "w") as f:
+                json.dump(rtf_data, f, indent=2)
+            print(f"RTF stats saved to {rtf_output}", flush=True)
 
 
 def main(args):
@@ -448,7 +463,8 @@ def main(args):
     for _ in range(num_threads):
         queue_input.put(None)
 
-    deal_with_output(output_path, queue_output, len(processing_ids))
+    deal_with_output(output_path, queue_output, len(processing_ids),
+                     rtf_output=getattr(args, "rtf_output", None))
 
     for p in processes:
         p.join()
@@ -482,6 +498,8 @@ if __name__ == "__main__":
         help="Disable rule-based post-processing",
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument("--rtf_output", type=str, default=None,
+                        help="Path to save RTF statistics as JSON")
 
     args = parser.parse_args()
 

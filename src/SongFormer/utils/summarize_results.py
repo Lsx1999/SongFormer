@@ -1,6 +1,7 @@
 """Summarize evaluation results from multiple subsets into a single MD file."""
 
 import argparse
+import json
 import os
 
 import pandas as pd
@@ -57,7 +58,47 @@ def format_metric_table(name: str, metrics: dict) -> str:
     return "\n".join(lines)
 
 
-def summarize(eval_base_dir: str, output_path: str, subsets: list[str] | None = None):
+def format_rtf_table(rtf_files: dict[str, str]) -> str:
+    """Format RTF statistics from JSON files into a markdown section."""
+    lines = ["## RTF (Real-Time Factor)", ""]
+    lines.append("| Subset | Samples | Audio Duration | Avg RTF | Min RTF | Max RTF | Std RTF |")
+    lines.append("|--------|---------|----------------|---------|---------|---------|---------|")
+
+    total_files = 0
+    total_duration = 0.0
+    weighted_rtf_sum = 0.0
+
+    for subset, json_path in sorted(rtf_files.items()):
+        if not os.path.isfile(json_path):
+            print(f"Warning: RTF file {json_path} not found, skipping")
+            continue
+        with open(json_path) as f:
+            data = json.load(f)
+        n = data.get("num_files", 0)
+        dur = data.get("total_audio_duration_s", 0.0)
+        avg = data.get("avg_rtf", 0.0)
+        lines.append(
+            f"| {subset} | {n} | {dur:.1f}s ({dur/60:.1f}min) "
+            f"| {avg:.4f} | {data.get('min_rtf', 0):.4f} "
+            f"| {data.get('max_rtf', 0):.4f} | {data.get('std_rtf', 0):.4f} |"
+        )
+        total_files += n
+        total_duration += dur
+        weighted_rtf_sum += avg * dur
+
+    if total_duration > 0:
+        overall_avg_rtf = weighted_rtf_sum / total_duration
+        lines.append(
+            f"| **Overall** | {total_files} | {total_duration:.1f}s ({total_duration/60:.1f}min) "
+            f"| **{overall_avg_rtf:.4f}** | - | - | - |"
+        )
+
+    lines.append("")
+    return "\n".join(lines)
+
+
+def summarize(eval_base_dir: str, output_path: str, subsets: list[str] | None = None,
+              rtf_files: dict[str, str] | None = None):
     """Summarize evaluation results from multiple subsets.
 
     Args:
@@ -70,6 +111,7 @@ def summarize(eval_base_dir: str, output_path: str, subsets: list[str] | None = 
                         eval_infer_summary.csv
         output_path: Path for the output MD file.
         subsets: List of subset names to include. If None, auto-detect.
+        rtf_files: Dict mapping subset name to RTF JSON file path.
     """
     if subsets is None:
         subsets = []
@@ -93,6 +135,10 @@ def summarize(eval_base_dir: str, output_path: str, subsets: list[str] | None = 
         metrics = load_summary_csv(csv_path)
         display_name = f"SongFormBench-{subset}"
         md_parts.append(format_metric_table(display_name, metrics))
+
+    # Add RTF section
+    if rtf_files:
+        md_parts.append(format_rtf_table(rtf_files))
 
     md_content = "\n".join(md_parts)
 
@@ -125,5 +171,20 @@ if __name__ == "__main__":
         default=None,
         help="Subset names to include (default: auto-detect)",
     )
+    parser.add_argument(
+        "--rtf_files",
+        type=str,
+        nargs="*",
+        default=None,
+        help="RTF JSON files in format SUBSET:path (e.g. HarmonixSet:/path/to/rtf.json)",
+    )
     args = parser.parse_args()
-    summarize(args.eval_base_dir, args.output_path, args.subsets)
+
+    rtf_dict = None
+    if args.rtf_files:
+        rtf_dict = {}
+        for item in args.rtf_files:
+            subset_name, path = item.split(":", 1)
+            rtf_dict[subset_name] = path
+
+    summarize(args.eval_base_dir, args.output_path, args.subsets, rtf_dict)
