@@ -213,32 +213,48 @@ for SUBSET in "${SUBSETS[@]}"; do
     echo "========================================"
 
     # Step 3: Run inference (capture RTF stats)
-    echo "[Step 3/6] Running inference on ${SUBSET}..."
     mkdir -p "${INFER_JSON_DIR}"
     RTF_JSON="${DATA_DIR}/${SUBSET}/rtf_stats.json"
-    python infer/infer.py \
-        -i "${AUDIO_SCP}" \
-        -o "${INFER_JSON_DIR}" \
-        --model SongFormer \
-        --checkpoint SongFormer.safetensors \
-        --config_path SongFormer.yaml \
-        -gn "${GPU_NUM}" \
-        -tn "${THREADS_PER_GPU}" \
-        --rtf_output "${RTF_JSON}"
+    INFER_DONE_COUNT=$(find "${INFER_JSON_DIR}" -maxdepth 1 -name "*.json" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${INFER_DONE_COUNT}" -ge "${SAMPLE_COUNT}" ] && [ "${SAMPLE_COUNT}" -gt 0 ]; then
+        echo "[Step 3/6] Inference already complete for ${SUBSET} (${INFER_DONE_COUNT}/${SAMPLE_COUNT}), skipping."
+    else
+        echo "[Step 3/6] Running inference on ${SUBSET} (${INFER_DONE_COUNT}/${SAMPLE_COUNT} done)..."
+        python infer/infer.py \
+            -i "${AUDIO_SCP}" \
+            -o "${INFER_JSON_DIR}" \
+            --model SongFormer \
+            --checkpoint SongFormer.safetensors \
+            --config_path SongFormer.yaml \
+            -gn "${GPU_NUM}" \
+            -tn "${THREADS_PER_GPU}" \
+            --rtf_output "${RTF_JSON}"
+    fi
 
     # Step 4: Convert JSON to MSA TXT
-    echo "[Step 4/6] Converting inference results to MSA TXT format..."
-    python utils/convert_res2msa_txt.py \
-        --input_folder "${INFER_JSON_DIR}" \
-        --output_folder "${INFER_TXT_DIR}"
+    INFER_JSON_COUNT=$(find "${INFER_JSON_DIR}" -maxdepth 1 -name "*.json" 2>/dev/null | wc -l | tr -d ' ')
+    INFER_TXT_COUNT=$(find "${INFER_TXT_DIR}" -maxdepth 1 -name "*.txt" 2>/dev/null | wc -l | tr -d ' ')
+    if [ "${INFER_TXT_COUNT}" -ge "${INFER_JSON_COUNT}" ] && [ "${INFER_JSON_COUNT}" -gt 0 ]; then
+        echo "[Step 4/6] TXT conversion already complete for ${SUBSET} (${INFER_TXT_COUNT}/${INFER_JSON_COUNT}), skipping."
+    else
+        echo "[Step 4/6] Converting inference results to MSA TXT format..."
+        python utils/convert_res2msa_txt.py \
+            --input_folder "${INFER_JSON_DIR}" \
+            --output_folder "${INFER_TXT_DIR}"
+    fi
 
     # Step 5: Run evaluation
-    echo "[Step 5/6] Running evaluation on ${SUBSET}..."
-    mkdir -p "${EVAL_DIR}"
-    python evaluation/eval_infer_results.py \
-        --ann_dir "${GT_DIR}" \
-        --est_dir "${INFER_TXT_DIR}" \
-        --output_dir "${EVAL_DIR}"
+    EVAL_CSV="${EVAL_DIR}/eval_infer_summary.csv"
+    if [ -f "${EVAL_CSV}" ]; then
+        echo "[Step 5/6] Evaluation already complete for ${SUBSET}, skipping."
+    else
+        echo "[Step 5/6] Running evaluation on ${SUBSET}..."
+        mkdir -p "${EVAL_DIR}"
+        python evaluation/eval_infer_results.py \
+            --ann_dir "${GT_DIR}" \
+            --est_dir "${INFER_TXT_DIR}" \
+            --output_dir "${EVAL_DIR}"
+    fi
 done
 
 # ============== Step 6: Summarize Results ==============
