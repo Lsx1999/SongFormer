@@ -13,6 +13,23 @@
 
 set -e
 
+# ============== Activate conda environment ==============
+CONDA_ENV_NAME="songformer"
+if [ -z "$CONDA_DEFAULT_ENV" ] || [ "$CONDA_DEFAULT_ENV" != "$CONDA_ENV_NAME" ]; then
+    # Initialize conda for non-interactive shell
+    __conda_setup="$(conda shell.bash hook 2>/dev/null)"
+    if [ $? -eq 0 ]; then
+        eval "$__conda_setup"
+    else
+        echo "Error: conda not found. Please install conda or activate the '${CONDA_ENV_NAME}' environment manually."
+        exit 1
+    fi
+    conda activate "$CONDA_ENV_NAME"
+    echo "Activated conda environment: ${CONDA_ENV_NAME}"
+else
+    echo "Conda environment '${CONDA_ENV_NAME}' is already active."
+fi
+
 # ============== Configuration ==============
 USE_MIRROR=""
 GPU_NUM=1
